@@ -153,6 +153,9 @@ def main(_):
       if current_label == wanted_label:
         found_sample_data = all_test_data[test_data_index]
         break
+    if found_sample_data is None:
+      print ("weird issue:", found_sample_data, test_data_offset)
+      continue
     mix_in_audio_sample(output_audio, output_offset, found_sample_data, 0,
                         clip_duration_samples, 1.0, 500, 500)
     output_labels.append({'label': wanted_label, 'time': output_offset_ms})

@@ -33,8 +33,12 @@ from __future__ import print_function
 
 import argparse
 import sys
+import os
 
 import tensorflow as tf
+
+
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
 
 # pylint: disable=unused-import
 from tensorflow.contrib.framework.python.ops import audio_ops as contrib_audio
@@ -56,30 +60,29 @@ def load_labels(filename):
   return [line.rstrip() for line in tf.gfile.GFile(filename)]
 
 
-def run_graph(wav_data, labels, input_layer_name, output_layer_name,
-              num_top_predictions):
+def run_graph(sess, wav_data, labels, input_layer_name, softmax_tensor, num_top_predictions):
   """Runs the audio data through the graph and prints predictions."""
-  with tf.Session() as sess:
-    # Feed the audio data as input to the graph.
-    #   predictions  will contain a two-dimensional array, where one
-    #   dimension represents the input image count, and the other has
-    #   predictions per class
-    softmax_tensor = sess.graph.get_tensor_by_name(output_layer_name)
-    predictions, = sess.run(softmax_tensor, {input_layer_name: wav_data})
+  # Feed the audio data as input to the graph.
+  #   predictions  will contain a two-dimensional array, where one
+  #   dimension represents the input image count, and the other has
+  #   predictions per class
+  
+  predictions, = sess.run(softmax_tensor, {input_layer_name: wav_data})
 
-    # Sort to show labels in order of confidence
-    top_k = predictions.argsort()[-num_top_predictions:][::-1]
-    for node_id in top_k:
-      human_string = labels[node_id]
-      score = predictions[node_id]
-      print('%s (score = %.5f)' % (human_string, score))
+  # Sort to show labels in order of confidence
+  top_k = predictions.argsort()[-num_top_predictions:][::-1]
+  results = []
+  for node_id in top_k:
+    human_string = labels[node_id]
+    score = predictions[node_id]
+    results.append((human_string, score))
+  return results
 
-    return 0
+import time
 
-
-def label_wav(wav, labels, graph, input_name, output_name, how_many_labels):
+def label_wav(wav, labels, graph, input_name, output_name, how_many_labels, data_dir):
   """Loads the model and labels, and runs the inference to print predictions."""
-  if not wav or not tf.gfile.Exists(wav):
+  if not wav or not tf.gfile.Exists(wav) and not data_dir:
     tf.logging.fatal('Audio file does not exist %s', wav)
 
   if not labels or not tf.gfile.Exists(labels):
@@ -93,16 +96,31 @@ def label_wav(wav, labels, graph, input_name, output_name, how_many_labels):
   # load graph, which is stored in the default session
   load_graph(graph)
 
-  with open(wav, 'rb') as wav_file:
+  if data_dir:
+    wavs = []
+    for l in [lb for lb in labels_list if lb not in ['_silence_', '_unknown_']]:
+      label_dir = os.path.join(data_dir, l)
+      for f in os.listdir(label_dir):
+        wavs.append(os.path.join(label_dir, f))
+  else:
+    wavs = [wav]
+
+  for wav_path in wavs:
+    print (wav)
+    wav_file = open(wav_path, 'rb')
     wav_data = wav_file.read()
-
-  run_graph(wav_data, labels_list, input_name, output_name, how_many_labels)
-
+    with tf.Session() as sess:
+      softmax_tensor = sess.graph.get_tensor_by_name(output_name)
+      start = time.time()
+      results = run_graph(sess, wav_data, labels_list, input_name, softmax_tensor, 2)
+      print (time.time()-start, "seconds. file:", os.path.basename(wav_path).split('----')[0], ': ', ', '.join(["{}:({})".format(name, res) for name, res in results]))
+      if results[0][1]<.9:
+        print ("\t\t", os.path.basename(wav_path), "low confidence")
 
 def main(_):
   """Entry point for script, converts flags to arguments."""
   label_wav(FLAGS.wav, FLAGS.labels, FLAGS.graph, FLAGS.input_name,
-            FLAGS.output_name, FLAGS.how_many_labels)
+            FLAGS.output_name, FLAGS.how_many_labels, FLAGS.data_dir)
 
 
 if __name__ == '__main__':
@@ -128,6 +146,13 @@ if __name__ == '__main__':
       type=int,
       default=3,
       help='Number of results to show.')
+  parser.add_argument(
+      '--data_dir',
+      type=str,
+      default='',
+      help="""\
+      test predictions on this directory.
+      """)
 
   FLAGS, unparsed = parser.parse_known_args()
   tf.app.run(main=main, argv=[sys.argv[0]] + unparsed)

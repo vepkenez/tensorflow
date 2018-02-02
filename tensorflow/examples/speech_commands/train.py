@@ -84,11 +84,13 @@ from tensorflow.python.platform import gfile
 
 FLAGS = None
 
+import time
+
 
 def main(_):
   # We want to see all the logging messages for this tutorial.
   tf.logging.set_verbosity(tf.logging.INFO)
-
+  timestamp = time.strftime("%Y-%m-%d_%H-%M")
   # Start a new TensorFlow session.
   sess = tf.InteractiveSession()
 
@@ -166,9 +168,9 @@ def main(_):
 
   # Merge all the summaries and write them out to /tmp/retrain_logs (by default)
   merged_summaries = tf.summary.merge_all()
-  train_writer = tf.summary.FileWriter(FLAGS.summaries_dir + '/train',
+  train_writer = tf.summary.FileWriter(FLAGS.summaries_dir + '/train-' + timestamp,
                                        sess.graph)
-  validation_writer = tf.summary.FileWriter(FLAGS.summaries_dir + '/validation')
+  validation_writer = tf.summary.FileWriter(FLAGS.summaries_dir + '/validation-' + timestamp)
 
   tf.global_variables_initializer().run()
 
