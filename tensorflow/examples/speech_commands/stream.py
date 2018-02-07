@@ -104,41 +104,40 @@ def stream(wav, labels, graph, input_name, output_name, how_many_labels, data_di
   # load graph, which is stored in the default session
   load_graph(graph)
 
-  wave_file = open('C:/tmp/speech_dataset/_background_noise_/white_noise.wav', 'rb').read()
-  wav_data, srate = librosa.load(wav)
+  wave_file = open('/tmp/speech_dataset/_background_noise_/white_noise.wav', 'rb').read()
+  wav_data, sr = librosa.load(wav, sr=44100)
   total_samples = len(wav_data)
 
   sess = tf.InteractiveSession()
   
-  
   wav_data_tensor = sess.graph.get_tensor_by_name(input_name)
   softmax_tensor = sess.graph.get_tensor_by_name(output_name)
   audio_data_tensor = sess.graph.get_tensor_by_name('decoded_sample_data:0')
-
   
-  increment = int(16000 / 10)
+  window_size = 4410
+  increment = 4410 #.1 seconds 
   sound = MovingSoundWindow(wav_data)
 
   plt.figure(figsize=(12, 8))
+  start = time.time()
 
   for i in range(0, total_samples, increment):
-    start = time.time()
-    wav_data = sound.next_window()
+    wav_data, window_start, window_end = sound.next_window()
     audio_data_tensor.data = wav_data
     
-    if len(wav_data) >= 16000:
-      results = run_graph(sess, labels_list, wav_data.reshape(16000, 1), audio_data_tensor, softmax_tensor, wav_data_tensor, wave_file, 1)
-      D = librosa.amplitude_to_db(librosa.stft(wav_data), ref=np.max)
-      librosa.display.specshow(D, y_axis='log')
-      plt.show()
+    if i >= window_size: #wait to accumulate a full second of samples
+      name, confidence = run_graph(sess, labels_list, wav_data.reshape(window_size, 1), audio_data_tensor, softmax_tensor, wav_data_tensor, wave_file, 1)[0]
+      
+      if confidence > .5 or 'silence' in name:
+        print (name, confidence, 'at', window_start, '-', window_end)
 
-    print(time.time() - start)
-    time.sleep(max(.1, time.time() - start))
+  print('total elapsed:', time.time() - start)
+
 
 class MovingSoundWindow(np.ndarray):
 
-  window_width = 16000
-  increment = int(16000 / 10)
+  window_width = 4410
+  increment = 4410
 
   def __new__(cls, inputarr):
     obj = np.asarray(inputarr).view(cls)
@@ -148,16 +147,26 @@ class MovingSoundWindow(np.ndarray):
     self.position = 0
     self.current_window = np.array([])
     self.step = 0
+    self.rolling = False
     super(MovingSoundWindow, self).__init__()
 
   def next_window(self, data=None):
     self.step += 1
     window = self[self.position: self.increment * self.step]
-    length = len(window)
-    if length >= self.window_width:
+
+    if self.rolling or len(window) >= self.window_width:
+      self.rolling = True # save this to avoid length calculation
       self.position += self.increment
-    print ('position:', self.position)
-    return window
+
+    # return the samples, and the start/end of the window
+    if self.step and not self.step % 10:
+      print (self[self.position - (self.increment * self.step): self.position])
+      D = librosa.amplitude_to_db(
+        self[self.position - (self.increment * self.step): self.position]
+      )
+      librosa.display.specshow(D, y_axis='log')
+      plt.savefig('graphs/%d.png'%self.position)
+    return window, self.position, self.position + (self.increment * self.step)
   
 
 def main(_):
