@@ -85,6 +85,8 @@ def run_graph(sess, labels, wav_data, input_layer, softmax_tensor, wav_data_tens
 
 import time
 import io
+import matplotlib.pyplot as plt
+import librosa.display
 
 def stream(wav, labels, graph, input_name, output_name, how_many_labels, data_dir):
   """Loads the model and labels, and runs the inference to print predictions."""
@@ -117,6 +119,8 @@ def stream(wav, labels, graph, input_name, output_name, how_many_labels, data_di
   increment = int(16000 / 10)
   sound = MovingSoundWindow(wav_data)
 
+  plt.figure(figsize=(12, 8))
+
   for i in range(0, total_samples, increment):
     start = time.time()
     wav_data = sound.next_window()
@@ -124,7 +128,9 @@ def stream(wav, labels, graph, input_name, output_name, how_many_labels, data_di
     
     if len(wav_data) >= 16000:
       results = run_graph(sess, labels_list, wav_data.reshape(16000, 1), audio_data_tensor, softmax_tensor, wav_data_tensor, wave_file, 1)
-      print(results)
+      D = librosa.amplitude_to_db(librosa.stft(wav_data), ref=np.max)
+      librosa.display.specshow(D, y_axis='log')
+      plt.show()
 
     print(time.time() - start)
     time.sleep(max(.1, time.time() - start))
